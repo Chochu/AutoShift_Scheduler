@@ -1,6 +1,6 @@
 "use client";
 
-import { Upload, Calendar, Users, Layout, Zap, Plus } from "lucide-react";
+import { Upload, Calendar, Users, Layout, Plus } from "lucide-react";
 import { FileUpload } from "./FileUpload";
 
 interface HeaderProps {
@@ -81,7 +81,7 @@ export function Header({
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => onTabChange(tab.id as any)}
+                onClick={() => onTabChange(tab.id as 'calendar' | 'pas' | 'templates')}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors ${
                   activeTab === tab.id
                     ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'

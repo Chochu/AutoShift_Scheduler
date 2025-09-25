@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { Calendar } from "@/components/Calendar";
 import { ShiftManager } from "@/components/ShiftManager";
-import { FileUpload } from "@/components/FileUpload";
 import { Header } from "@/components/Header";
 import { ShiftForm } from "@/components/ShiftForm";
 import { PAList } from "@/components/PAList";
@@ -12,10 +11,29 @@ import { Dialog, DialogPortal, DialogOverlay, DialogContent, DialogTitle } from 
 import * as XLSX from "xlsx";
 import { Shift } from "@/model/Shift";
 import { PA } from "@/model/PA";
-import { PerDiem } from "@/model/PerDiem";
 import { DayTemplate } from "@/model/DayTemplate";
 import { getShiftColor } from "@/utils/shiftColors";
-import { SchedulingService, SchedulingData } from "@/services/schedulingService";
+import { SchedulingService } from "@/services/schedulingService";
+
+interface UploadedData {
+  requestedWorkDays?: Array<{
+    'Name(ID)': string;
+    Date: string;
+    Shift: string;
+  }>;
+  requestedDaysOff?: Array<{
+    'Name(ID)': string;
+    Date: string;
+  }>;
+  paList?: Array<{
+    'Name(ID)': string;
+  }>;
+  perDiemList?: Array<{
+    'Name(ID)': string;
+    'Dates Available to Work Start': string;
+    'Dates Available to Work End': string;
+  }>;
+}
 
 export default function Home() {
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -27,8 +45,7 @@ export default function Home() {
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [activeTab, setActiveTab] = useState<'calendar' | 'pas' | 'templates'>('calendar');
   const [isFileUploaded, setIsFileUploaded] = useState(false);
-  const [uploadedData, setUploadedData] = useState<any>(null);
-  const [perDiems, setPerDiems] = useState<PerDiem[]>([]);
+  const [uploadedData, setUploadedData] = useState<UploadedData | null>(null);
 
   // Initialize with sample data (removed John Smith and Sarah Johnson)
   useEffect(() => {
@@ -105,19 +122,23 @@ export default function Home() {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       
-      const uploadedData: any = {};
+      const uploadedData: UploadedData = {};
       
       // Parse RequestedWorkDay sheet
       if (workbook.SheetNames.includes('RequestedWorkDay')) {
         const workDaySheet = workbook.Sheets['RequestedWorkDay'];
         const workDayData = XLSX.utils.sheet_to_json(workDaySheet);
         // Convert Excel dates to date strings
-        uploadedData.requestedWorkDays = workDayData.map((item: any) => ({
-          ...item,
-          Date: typeof item.Date === 'number' ? 
-            XLSX.SSF.format('yyyy-mm-dd', item.Date) : 
-            item.Date
-        }));
+        uploadedData.requestedWorkDays = workDayData.map((item: unknown) => {
+          const typedItem = item as Record<string, unknown>;
+          return {
+            'Name(ID)': String(typedItem['Name(ID)'] || ''),
+            Date: typeof typedItem.Date === 'number' ? 
+              XLSX.SSF.format('yyyy-mm-dd', typedItem.Date) : 
+              String(typedItem.Date || ''),
+            Shift: String(typedItem.Shift || '')
+          };
+        });
         console.log('Requested Work Days:', uploadedData.requestedWorkDays);
       }
       
@@ -126,12 +147,15 @@ export default function Home() {
         const dayOffSheet = workbook.Sheets['RequestedDayOff'];
         const dayOffData = XLSX.utils.sheet_to_json(dayOffSheet);
         // Convert Excel dates to date strings
-        uploadedData.requestedDaysOff = dayOffData.map((item: any) => ({
-          ...item,
-          Date: typeof item.Date === 'number' ? 
-            XLSX.SSF.format('yyyy-mm-dd', item.Date) : 
-            item.Date
-        }));
+        uploadedData.requestedDaysOff = dayOffData.map((item: unknown) => {
+          const typedItem = item as Record<string, unknown>;
+          return {
+            'Name(ID)': String(typedItem['Name(ID)'] || ''),
+            Date: typeof typedItem.Date === 'number' ? 
+              XLSX.SSF.format('yyyy-mm-dd', typedItem.Date) : 
+              String(typedItem.Date || '')
+          };
+        });
         console.log('Requested Days Off:', uploadedData.requestedDaysOff);
       }
       
@@ -139,7 +163,12 @@ export default function Home() {
       if (workbook.SheetNames.includes('ListOfPA')) {
         const paSheet = workbook.Sheets['ListOfPA'];
         const paData = XLSX.utils.sheet_to_json(paSheet);
-        uploadedData.paList = paData;
+        uploadedData.paList = paData.map((item: unknown) => {
+          const typedItem = item as Record<string, unknown>;
+          return {
+            'Name(ID)': String(typedItem['Name(ID)'] || '')
+          };
+        });
         console.log('PA List:', paData);
       }
 
@@ -148,15 +177,18 @@ export default function Home() {
         const perDiemSheet = workbook.Sheets['ListOfPerDiem'];
         const perDiemData = XLSX.utils.sheet_to_json(perDiemSheet);
         // Convert Excel dates to date strings (consistent with other sheets)
-        uploadedData.perDiemList = perDiemData.map((item: any) => ({
-          ...item,
-          'Dates Available to Work Start': typeof item['Dates Available to Work Start'] === 'number' ? 
-            XLSX.SSF.format('yyyy-mm-dd', item['Dates Available to Work Start']) : 
-            item['Dates Available to Work Start'],
-          'Dates Available to Work End': typeof item['Dates Available to Work End'] === 'number' ? 
-            XLSX.SSF.format('yyyy-mm-dd', item['Dates Available to Work End']) : 
-            item['Dates Available to Work End']
-        }));
+        uploadedData.perDiemList = perDiemData.map((item: unknown) => {
+          const typedItem = item as Record<string, unknown>;
+          return {
+            'Name(ID)': String(typedItem['Name(ID)'] || ''),
+            'Dates Available to Work Start': typeof typedItem['Dates Available to Work Start'] === 'number' ? 
+              XLSX.SSF.format('yyyy-mm-dd', typedItem['Dates Available to Work Start']) : 
+              String(typedItem['Dates Available to Work Start'] || ''),
+            'Dates Available to Work End': typeof typedItem['Dates Available to Work End'] === 'number' ? 
+              XLSX.SSF.format('yyyy-mm-dd', typedItem['Dates Available to Work End']) : 
+              String(typedItem['Dates Available to Work End'] || '')
+          };
+        });
         console.log('Per Diem List:', uploadedData.perDiemList);
       }
       

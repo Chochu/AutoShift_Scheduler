@@ -3,11 +3,32 @@ import { PA } from "@/model/PA";
 import { PerDiem } from "@/model/PerDiem";
 import { getWeekNumber, getPaycheckPeriod, isSameWeek, isSamePaycheckPeriod } from "@/utils/weekNumber";
 
+interface PAEntry {
+  'Name(ID)': string;
+}
+
+interface PerDiemEntry {
+  'Name(ID)': string;
+  'Dates Available to Work Start': string;
+  'Dates Available to Work End': string;
+}
+
+interface WorkDayEntry {
+  'Name(ID)': string;
+  Date: string;
+  Shift: string;
+}
+
+interface DayOffEntry {
+  'Name(ID)': string;
+  Date: string;
+}
+
 export interface SchedulingData {
-  paList: any[];
-  perDiemList: any[];
-  requestedWorkDays: any[];
-  requestedDaysOff: any[];
+  paList?: PAEntry[];
+  perDiemList?: PerDiemEntry[];
+  requestedWorkDays?: WorkDayEntry[];
+  requestedDaysOff?: DayOffEntry[];
 }
 
 export interface SchedulingResult {
@@ -229,7 +250,7 @@ export class SchedulingService {
     shifts: Shift[], 
     data: SchedulingData
   ): SchedulingResult {
-    const { paList, perDiemList, requestedWorkDays, requestedDaysOff } = data;
+    const { paList = [], perDiemList = [], requestedWorkDays = [], requestedDaysOff = [] } = data;
 
     // Add debugging
     console.log('PA List:', paList);
@@ -237,18 +258,18 @@ export class SchedulingService {
     console.log('Requested Days Off:', requestedDaysOff);
 
     // Process PAs with self-assigned shifts
-    const processedPAs: PA[] = paList.map((pa: any) => {
+    const processedPAs: PA[] = paList.map((pa: PAEntry) => {
       // Extract PA ID from the "Name(ID)" format
-      const paId = pa['Name(ID)'] ? pa['Name(ID)'].split('(')[1]?.replace(')', '') : pa.id;
+      const paId = pa['Name(ID)'] ? pa['Name(ID)'].split('(')[1]?.replace(')', '') : '';
       
-      const paWorkDays = requestedWorkDays.filter((workDay: any) => {
+      const paWorkDays = requestedWorkDays.filter((workDay: WorkDayEntry) => {
         // Extract work day PA ID
         const workDayPAId = workDay['Name(ID)'] ? 
           workDay['Name(ID)'].split('(')[1]?.replace(')', '') : null;
         return workDayPAId === paId;
       });
       
-      const paDaysOff = requestedDaysOff.filter((dayOff: any) => {
+      const paDaysOff = requestedDaysOff.filter((dayOff: DayOffEntry) => {
         // Extract day off PA ID
         const dayOffPAId = dayOff['Name(ID)'] ? 
           dayOff['Name(ID)'].split('(')[1]?.replace(')', '') : null;
@@ -259,26 +280,26 @@ export class SchedulingService {
 
       return {
         id: paId,
-        name: pa['Name(ID)'] ? pa['Name(ID)'].split('(')[0].trim() : pa.name,
+        name: pa['Name(ID)'] ? pa['Name(ID)'].split('(')[0].trim() : '',
         shiftsWorked: 0,
         maxShifts: 12, // 12 shifts per month
         assignedShifts: paWorkDays.length, // Self-assigned shifts
         overnightShifts: 0,
         weekendShifts: 0,
         lastOvernightDate: null,
-        requestedWorkDays: paWorkDays.map((wd: any) => wd.Date),
-        requestedDaysOff: paDaysOff.map((dayOff: any) => dayOff.Date),
+        requestedWorkDays: paWorkDays.map((wd: WorkDayEntry) => wd.Date),
+        requestedDaysOff: paDaysOff.map((dayOff: DayOffEntry) => dayOff.Date),
         available: true
       };
     });
 
     // Process Per Diem
-    const processedPerDiem: PerDiem[] = perDiemList.map((pd: any) => ({
-      id: pd['Name(ID)'] ? pd['Name(ID)'].split('(')[1]?.replace(')', '') : pd.id,
-      name: pd['Name(ID)'] ? pd['Name(ID)'].split('(')[0].trim() : pd.name,
+    const processedPerDiem: PerDiem[] = perDiemList.map((pd: PerDiemEntry) => ({
+      id: pd['Name(ID)'] ? pd['Name(ID)'].split('(')[1]?.replace(')', '') : '',
+      name: pd['Name(ID)'] ? pd['Name(ID)'].split('(')[0].trim() : '',
       shiftsWorked: 0,
-      availableStart: pd.availableStart,
-      availableEnd: pd.availableEnd
+      availableStart: pd['Dates Available to Work Start'],  // Using the correct property name
+      availableEnd: pd['Dates Available to Work End']      // Using the correct property name
     }));
 
     // Sort shifts by date to process chronologically
@@ -292,7 +313,7 @@ export class SchedulingService {
     // Step 1: Fill in self-assigned shifts first
     for (const shift of sortedShifts) {
       // Check if this shift matches a PA's requested work day
-      const matchingWorkDay = requestedWorkDays.find((workDay: any) => {
+      const matchingWorkDay = requestedWorkDays.find((workDay: WorkDayEntry) => {
         // Extract PA ID from the work day entry
         const workDayPAId = workDay['Name(ID)'] ? 
           workDay['Name(ID)'].split('(')[1]?.replace(')', '') : null;
@@ -303,9 +324,8 @@ export class SchedulingService {
       });
 
       if (matchingWorkDay) {
-        // Extract PA ID and name
+        // Extract PA ID
         const workDayPAId = matchingWorkDay['Name(ID)'].split('(')[1]?.replace(')', '');
-        const workDayPAName = matchingWorkDay['Name(ID)'].split('(')[0].trim();
         
         // Find the corresponding PA
         const matchingPA = processedPAs.find(pa => pa.id === workDayPAId);
