@@ -1,14 +1,15 @@
-import { Shift } from "@/model/Shift";
 import { PA } from "@/model/PA";
 import { PerDiem } from "@/model/PerDiem";
 import { getWeekNumber, getPaycheckPeriod, isSameWeek, isSamePaycheckPeriod } from "@/utils/weekNumber";
 
 interface PAEntry {
   'Name(ID)': string;
+  'Number of Shift': number;
 }
 
 interface PerDiemEntry {
   'Name(ID)': string;
+  'Number of Shift': number;
   'Dates Available to Work Start': string;
   'Dates Available to Work End': string;
 }
@@ -53,18 +54,143 @@ export class SchedulingService {
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
 
+  // Enhanced randomization with Fisher-Yates shuffle
+  private shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+
+  // Enhanced weekend balancing with strict 2-shift-per-person rule
+  private balanceWeekendShifts(
+    weekendShifts: Shift[], 
+    processedPAs: PA[], 
+    requestedWorkDays: WorkDayEntry[]
+  ): Shift[] {
+    console.log('=== ENHANCED WEEKEND BALANCING ALGORITHM ===');
+    
+    // Track weekend assignments per PA
+    const weekendAssignments = new Map<string, Shift[]>();
+    processedPAs.forEach(pa => {
+      weekendAssignments.set(pa.id, []);
+    });
+    
+    // Process self-assigned weekend shifts first
+    const selfAssignedWeekendShifts: Shift[] = [];
+    const remainingWeekendShifts: Shift[] = [];
+    
+    for (const shift of weekendShifts) {
+      const matchingWorkDay = requestedWorkDays.find((workDay: WorkDayEntry) => {
+        const workDayPAId = workDay['Name(ID)'] ? 
+          workDay['Name(ID)'].split('(')[1]?.replace(')', '') : null;
+        
+        return workDayPAId && 
+               workDay.Date === shift.date && 
+               workDay.Shift === shift.type;
+      });
+      
+      if (matchingWorkDay) {
+        const workDayPAId = matchingWorkDay['Name(ID)'].split('(')[1]?.replace(')', '');
+        const matchingPA = processedPAs.find(pa => pa.id === workDayPAId);
+        
+        if (matchingPA) {
+          const assignedShift = {
+            ...shift,
+            assignedPA: matchingPA.name,
+            paId: matchingPA.id
+          };
+          selfAssignedWeekendShifts.push(assignedShift);
+          weekendAssignments.get(matchingPA.id)!.push(assignedShift);
+        } else {
+          remainingWeekendShifts.push(shift);
+        }
+      } else {
+        remainingWeekendShifts.push(shift);
+      }
+    }
+    
+    console.log(`Self-assigned weekend shifts: ${selfAssignedWeekendShifts.length}`);
+    console.log(`Remaining weekend shifts to balance: ${remainingWeekendShifts.length}`);
+    
+    // Balance remaining weekend shifts with strict 2-shift-per-person rule
+    const balancedShifts: Shift[] = [...selfAssignedWeekendShifts];
+    
+    // Shuffle remaining weekend shifts for randomization
+    const shuffledWeekendShifts = this.shuffleArray(remainingWeekendShifts);
+    
+    // Process each weekend shift
+    for (const shift of shuffledWeekendShifts) {
+      let assigned = false;
+      
+      // Find PAs with fewer than 2 weekend shifts
+      const pasWithLessThan2 = processedPAs.filter(pa => 
+        weekendAssignments.get(pa.id)!.length < 2
+      );
+      
+      if (pasWithLessThan2.length > 0) {
+        // Shuffle PAs for randomization, then sort by weekend count
+        const shuffledPAs = this.shuffleArray(pasWithLessThan2);
+        const sortedByWeekendCount = shuffledPAs.sort((a, b) => {
+          const aWeekendCount = weekendAssignments.get(a.id)!.length;
+          const bWeekendCount = weekendAssignments.get(b.id)!.length;
+          return aWeekendCount - bWeekendCount;
+        });
+        
+        // Try to assign to PA with fewest weekend shifts
+        for (const pa of sortedByWeekendCount) {
+          const canAssign = this.canAssignPA(pa, shift, balancedShifts);
+          if (canAssign.canAssign) {
+            const assignedShift = {
+              ...shift,
+              assignedPA: pa.name,
+              paId: pa.id
+            };
+            balancedShifts.push(assignedShift);
+            weekendAssignments.get(pa.id)!.push(assignedShift);
+            assigned = true;
+            console.log(`✓ Assigned ${pa.name} to weekend shift ${shift.date} ${shift.type}`);
+            break;
+          }
+        }
+      }
+      
+      if (!assigned) {
+        // All PAs have 2 weekend shifts, keep unassigned
+        balancedShifts.push({
+          ...shift,
+          assignedPA: null,
+          paId: null
+        });
+        console.log(`✗ No PA available for weekend shift ${shift.date} ${shift.type}`);
+      }
+    }
+    
+    // Log final weekend distribution
+    console.log('=== FINAL WEEKEND DISTRIBUTION ===');
+    processedPAs.forEach(pa => {
+      const weekendCount = weekendAssignments.get(pa.id)!.length;
+      console.log(`${pa.name}: ${weekendCount} weekend shifts`);
+    });
+    
+    return balancedShifts;
+  }
+
+  // Enhanced PA assignment with load balancing
   private canAssignPA(pa: PA, shift: Shift, existingShifts: Shift[]): { canAssign: boolean; reason?: string } {
     // Check if PA has reached max shifts (12 per month)
     if (pa.assignedShifts >= pa.maxShifts) {
       return { canAssign: false, reason: 'Max shifts reached (12 per month)' };
     }
 
-    // Rule 7: Each slot is a position a PA can work in. So on the same day, it's impossible for a PA to fill two slots
+    // Rule 7: Each slot is a position a PA can work in
     const alreadyAssignedToday = existingShifts.filter(s => 
       s.date === shift.date && s.paId === pa.id
     );
     if (alreadyAssignedToday.length > 0) {
-      return { canAssign: false, reason: 'Already assigned to another shift today - each slot is a separate position' };
+      return { canAssign: false, reason: 'Already assigned to another shift today' };
     }
 
     // Check day off request
@@ -97,9 +223,8 @@ export class SchedulingService {
     const paShifts = existingShifts
       .filter(s => s.paId === pa.id)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
+
     if (paShifts.length >= 3) {
-      // Check the last 3 shifts to see if they're consecutive
       const lastThreeShifts = paShifts.slice(-3);
       let consecutiveCount = 1;
       
@@ -116,8 +241,23 @@ export class SchedulingService {
       }
       
       if (consecutiveCount >= 3) {
-        return { canAssign: false, reason: 'Max 3 consecutive shifts in a row' };
+        const lastShiftDate = new Date(lastThreeShifts[lastThreeShifts.length - 1].date);
+        const daysSinceLastShift = this.getDaysBetween(lastShiftDate.toISOString().split('T')[0], shift.date);
+        
+        if (daysSinceLastShift === 1) {
+          return { canAssign: false, reason: 'Max 3 consecutive shifts in a row' };
+        }
       }
+    }
+
+    // Rule 9: Maximum 3 shifts per week (to space out assignments)
+    const paShiftsThisWeek = existingShifts.filter(s => 
+      s.paId === pa.id && 
+      isSameWeek(s.date, shift.date)
+    ).length;
+
+    if (paShiftsThisWeek >= 3) {
+      return { canAssign: false, reason: `Max 3 shifts per week (has ${paShiftsThisWeek})` };
     }
 
     // Rule 5: PA work total of 6 shifts max every paycheck (Week 1+2 | Week 3+4)
@@ -127,9 +267,7 @@ export class SchedulingService {
       isSamePaycheckPeriod(s.date, shift.date)
     ).length;
 
-    // Debug logging for paycheck period violations
     if (paShiftsThisPaycheck >= 6) {
-      console.log(`PA ${pa.name} has ${paShiftsThisPaycheck} shifts in Period ${currentPaycheckPeriod} - blocking assignment to ${shift.date}`);
       return { canAssign: false, reason: `Max 6 shifts per paycheck period (has ${paShiftsThisPaycheck})` };
     }
 
@@ -142,7 +280,6 @@ export class SchedulingService {
         isSameWeek(s.date, shift.date)
       ).length;
 
-      // Check if PA worked overnight shifts in the previous week
       const previousWeek = currentWeek - 1;
       const paOvernightShiftsPreviousWeek = existingShifts.filter(s => 
         s.paId === pa.id && 
@@ -150,18 +287,16 @@ export class SchedulingService {
         getWeekNumber(s.date) === previousWeek
       ).length;
 
-      // If PA worked overnight shifts in previous week, they can't work overnight this week
       if (paOvernightShiftsPreviousWeek > 0) {
         return { canAssign: false, reason: 'No consecutive overnight weeks - must alternate' };
       }
 
-      // Check if PA has reached max overnight shifts for this week (2 max)
       if (paOvernightShiftsThisWeek >= 2) {
         return { canAssign: false, reason: 'Max 2 overnight shifts per week' };
       }
     }
 
-    // Rule 4: PA must work 2 weekend shifts per month (prioritize PAs with fewer weekend shifts)
+    // Rule 4: PA must work 2 weekend shifts per month
     if (this.isWeekend(shift.date)) {
       const paWeekendShiftsThisMonth = existingShifts.filter(s => 
         s.paId === pa.id && 
@@ -170,7 +305,6 @@ export class SchedulingService {
         new Date(s.date).getFullYear() === new Date(shift.date).getFullYear()
       ).length;
 
-      // Allow up to 2 weekend shifts per month, but prioritize PAs with fewer weekend shifts
       if (paWeekendShiftsThisMonth >= 2) {
         return { canAssign: false, reason: 'Max 2 weekend shifts per month' };
       }
@@ -180,7 +314,6 @@ export class SchedulingService {
   }
 
   private canAssignPerDiem(perDiem: PerDiem, shift: Shift, existingShifts: Shift[]): { canAssign: boolean; reason?: string } {
-    // Check if Per Diem is available during this date range
     const shiftDate = new Date(shift.date);
     const availableStart = new Date(perDiem.availableStart);
     const availableEnd = new Date(perDiem.availableEnd);
@@ -189,7 +322,6 @@ export class SchedulingService {
       return { canAssign: false, reason: 'Not available during this date range' };
     }
 
-    // Check if Per Diem is already assigned to this date
     const alreadyAssignedToday = existingShifts.filter(s => 
       s.date === shift.date && s.paId === perDiem.id
     );
@@ -200,25 +332,16 @@ export class SchedulingService {
     return { canAssign: true };
   }
 
+  // Assignment without randomization - keep original PA order
   private assignStaffToShift(
     shift: Shift, 
     processedPAs: PA[], 
     processedPerDiem: PerDiem[], 
     existingShifts: Shift[]
   ): { assigned: boolean; staffId?: string; staffName?: string; reason?: string } {
-    // Sort PAs by weekend shift count (prioritize those with fewer weekend shifts)
-    const sortedPAs = [...processedPAs].sort((a, b) => {
-      const aWeekendShifts = existingShifts.filter(s => 
-        s.paId === a.id && this.isWeekend(s.date)
-      ).length;
-      const bWeekendShifts = existingShifts.filter(s => 
-        s.paId === b.id && this.isWeekend(s.date)
-      ).length;
-      return aWeekendShifts - bWeekendShifts;
-    });
-
-    // Try PAs first
-    for (const pa of sortedPAs) {
+    
+    // Use PAs in original order (no shuffling or randomization)
+    for (const pa of processedPAs) {
       const canAssign = this.canAssignPA(pa, shift, existingShifts);
       if (canAssign.canAssign) {
         return { 
@@ -230,7 +353,7 @@ export class SchedulingService {
       }
     }
 
-    // Try Per Diem if no PA available
+    // Try Per Diem in original order if no PA available
     for (const perDiem of processedPerDiem) {
       const canAssign = this.canAssignPerDiem(perDiem, shift, existingShifts);
       if (canAssign.canAssign) {
@@ -252,38 +375,31 @@ export class SchedulingService {
   ): SchedulingResult {
     const { paList = [], perDiemList = [], requestedWorkDays = [], requestedDaysOff = [] } = data;
 
-    // Add debugging
-    console.log('PA List:', paList);
-    console.log('Requested Work Days:', requestedWorkDays);
-    console.log('Requested Days Off:', requestedDaysOff);
+    console.log('=== SCHEDULING ALGORITHM (NO RANDOMIZATION) ===');
+    console.log(`Processing ${paList.length} PAs and ${perDiemList.length} Per Diem staff`);
 
-    // Process PAs with self-assigned shifts
+    // Process PAs in original order (no shuffling)
     const processedPAs: PA[] = paList.map((pa: PAEntry) => {
-      // Extract PA ID from the "Name(ID)" format
       const paId = pa['Name(ID)'] ? pa['Name(ID)'].split('(')[1]?.replace(')', '') : '';
       
       const paWorkDays = requestedWorkDays.filter((workDay: WorkDayEntry) => {
-        // Extract work day PA ID
         const workDayPAId = workDay['Name(ID)'] ? 
           workDay['Name(ID)'].split('(')[1]?.replace(')', '') : null;
         return workDayPAId === paId;
       });
       
       const paDaysOff = requestedDaysOff.filter((dayOff: DayOffEntry) => {
-        // Extract day off PA ID
         const dayOffPAId = dayOff['Name(ID)'] ? 
           dayOff['Name(ID)'].split('(')[1]?.replace(')', '') : null;
         return dayOffPAId === paId;
       });
 
-      console.log(`PA ${paId}: Work Days: ${paWorkDays.length}, Days Off: ${paDaysOff.length}`);
-
       return {
         id: paId,
         name: pa['Name(ID)'] ? pa['Name(ID)'].split('(')[0].trim() : '',
         shiftsWorked: 0,
-        maxShifts: 12, // 12 shifts per month
-        assignedShifts: paWorkDays.length, // Self-assigned shifts
+        maxShifts: pa['Number of Shift'] || 12,
+        assignedShifts: paWorkDays.length,
         overnightShifts: 0,
         weekendShifts: 0,
         lastOvernightDate: null,
@@ -293,28 +409,55 @@ export class SchedulingService {
       };
     });
 
-    // Process Per Diem
+    // Process Per Diem in original order (no shuffling)
     const processedPerDiem: PerDiem[] = perDiemList.map((pd: PerDiemEntry) => ({
       id: pd['Name(ID)'] ? pd['Name(ID)'].split('(')[1]?.replace(')', '') : '',
       name: pd['Name(ID)'] ? pd['Name(ID)'].split('(')[0].trim() : '',
       shiftsWorked: 0,
-      availableStart: pd['Dates Available to Work Start'],  // Using the correct property name
-      availableEnd: pd['Dates Available to Work End']      // Using the correct property name
+      maxShifts: pd['Number of Shift'] || 8,
+      availableStart: pd['Dates Available to Work Start'],
+      availableEnd: pd['Dates Available to Work End']
     }));
 
-    // Sort shifts by date to process chronologically
-    const sortedShifts = [...shifts].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
+    // Keep shifts in their original order - no sorting or shuffling
+    const weekendShifts = shifts.filter(shift => this.isWeekend(shift.date));
+    const weekdayShifts = shifts.filter(shift => !this.isWeekend(shift.date));
 
     const updatedShifts: Shift[] = [];
     const updatedPAs: PA[] = [...processedPAs];
 
-    // Step 1: Fill in self-assigned shifts first
-    for (const shift of sortedShifts) {
+    // Step 1: Process weekend shifts in original order
+    console.log('=== STEP 1: PROCESSING WEEKEND SHIFTS ===');
+    const balancedWeekendShifts = this.balanceWeekendShifts(
+      weekendShifts,  // Use original weekend shifts order
+      processedPAs, 
+      requestedWorkDays
+    );
+    
+    updatedShifts.push(...balancedWeekendShifts);
+    
+    // Update PA stats for weekend shifts
+    balancedWeekendShifts.forEach(shift => {
+      if (shift.assignedPA && shift.paId) {
+        const staff = updatedPAs.find(p => p.id === shift.paId);
+        if (staff) {
+          staff.assignedShifts++;
+          if (this.isOvernight(shift.type)) {
+            staff.overnightShifts++;
+            staff.lastOvernightDate = shift.date;
+          }
+          if (this.isWeekend(shift.date)) {
+            staff.weekendShifts++;
+          }
+        }
+      }
+    });
+
+    // Step 2: Process weekday shifts in original order
+    console.log('=== STEP 2: PROCESSING WEEKDAY SHIFTS ===');
+    for (const shift of weekdayShifts) {  // Use original weekday shifts order
       // Check if this shift matches a PA's requested work day
       const matchingWorkDay = requestedWorkDays.find((workDay: WorkDayEntry) => {
-        // Extract PA ID from the work day entry
         const workDayPAId = workDay['Name(ID)'] ? 
           workDay['Name(ID)'].split('(')[1]?.replace(')', '') : null;
         
@@ -324,116 +467,41 @@ export class SchedulingService {
       });
 
       if (matchingWorkDay) {
-        // Extract PA ID
+        // Self-assigned weekday shift
         const workDayPAId = matchingWorkDay['Name(ID)'].split('(')[1]?.replace(')', '');
-        
-        // Find the corresponding PA
         const matchingPA = processedPAs.find(pa => pa.id === workDayPAId);
         
         if (matchingPA) {
-          // Check if PA is already assigned to another shift on the same day
           const alreadyAssignedToday = updatedShifts.filter(s => 
             s.date === shift.date && s.paId === matchingPA.id
           );
           
           if (alreadyAssignedToday.length > 0) {
-            // PA is already assigned to another shift today, skip this self-assignment
-            console.log(`Skipping self-assignment for ${matchingPA.name} on ${shift.date} - already assigned to another shift today`);
             updatedShifts.push({
               ...shift,
               assignedPA: null,
               paId: null
             });
           } else {
-            // Check paycheck period limit for self-assigned shifts too
-            const currentPaycheckPeriod = getPaycheckPeriod(shift.date);
-            const paShiftsThisPaycheck = updatedShifts.filter(s => 
-              s.paId === matchingPA.id && 
-              isSamePaycheckPeriod(s.date, shift.date)
-            ).length;
+            updatedShifts.push({
+              ...shift,
+              assignedPA: matchingPA.name,
+              paId: matchingPA.id
+            });
 
-            if (paShiftsThisPaycheck >= 6) {
-              console.log(`Skipping self-assignment for ${matchingPA.name} on ${shift.date} - already has ${paShiftsThisPaycheck} shifts in Period ${currentPaycheckPeriod}`);
-              updatedShifts.push({
-                ...shift,
-                assignedPA: null,
-                paId: null
-              });
-            } else {
-              // Check Rule 8: No more than 3 consecutive shifts for self-assigned shifts
-              const paShifts = updatedShifts
-                .filter(s => s.paId === matchingPA.id)
-                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-              
-              if (paShifts.length >= 3) {
-                const lastThreeShifts = paShifts.slice(-3);
-                let consecutiveCount = 1;
-                
-                for (let i = lastThreeShifts.length - 1; i > 0; i--) {
-                  const currentDate = new Date(lastThreeShifts[i].date);
-                  const previousDate = new Date(lastThreeShifts[i - 1].date);
-                  const daysDiff = this.getDaysBetween(previousDate.toISOString().split('T')[0], currentDate.toISOString().split('T')[0]);
-                  
-                  if (daysDiff === 1) {
-                    consecutiveCount++;
-                  } else {
-                    break;
-                  }
-                }
-                
-                if (consecutiveCount >= 3) {
-                  console.log(`Skipping self-assignment for ${matchingPA.name} on ${shift.date} - would exceed 3 consecutive shifts`);
-                  updatedShifts.push({
-                    ...shift,
-                    assignedPA: null,
-                    paId: null
-                  });
-                } else {
-                  // Assign the PA to their requested shift
-                  updatedShifts.push({
-                    ...shift,
-                    assignedPA: matchingPA.name,
-                    paId: matchingPA.id
-                  });
-
-                  // Update PA stats
-                  const staff = updatedPAs.find(p => p.id === matchingPA.id);
-                  if (staff) {
-                    staff.assignedShifts++;
-                    if (this.isOvernight(shift.type)) {
-                      staff.overnightShifts++;
-                      staff.lastOvernightDate = shift.date;
-                    }
-                    if (this.isWeekend(shift.date)) {
-                      staff.weekendShifts++;
-                    }
-                  }
-                }
-              } else {
-                // Assign the PA to their requested shift
-                updatedShifts.push({
-                  ...shift,
-                  assignedPA: matchingPA.name,
-                  paId: matchingPA.id
-                });
-
-                // Update PA stats
-                const staff = updatedPAs.find(p => p.id === matchingPA.id);
-                if (staff) {
-                  staff.assignedShifts++;
-                  if (this.isOvernight(shift.type)) {
-                    staff.overnightShifts++;
-                    staff.lastOvernightDate = shift.date;
-                  }
-                  if (this.isWeekend(shift.date)) {
-                    staff.weekendShifts++;
-                  }
-                }
+            const staff = updatedPAs.find(p => p.id === matchingPA.id);
+            if (staff) {
+              staff.assignedShifts++;
+              if (this.isOvernight(shift.type)) {
+                staff.overnightShifts++;
+                staff.lastOvernightDate = shift.date;
+              }
+              if (this.isWeekend(shift.date)) {
+                staff.weekendShifts++;
               }
             }
           }
         } else {
-          // Keep shift unassigned if PA not found
           updatedShifts.push({
             ...shift,
             assignedPA: null,
@@ -441,18 +509,16 @@ export class SchedulingService {
           });
         }
       } else {
-        // Step 2: Try to assign remaining shifts using the algorithm
+        // Automatic assignment for weekday shift (no randomization)
         const assignment = this.assignStaffToShift(shift, updatedPAs, processedPerDiem, updatedShifts);
         
         if (assignment.assigned && assignment.staffId && assignment.staffName) {
-          // Update shift with assignment
           updatedShifts.push({
             ...shift,
             assignedPA: assignment.staffName,
             paId: assignment.staffId
           });
 
-          // Update PA/Per Diem stats
           const staff = updatedPAs.find(p => p.id === assignment.staffId);
           if (staff) {
             staff.assignedShifts++;
@@ -465,7 +531,6 @@ export class SchedulingService {
             }
           }
         } else {
-          // Keep shift unassigned
           updatedShifts.push({
             ...shift,
             assignedPA: null,

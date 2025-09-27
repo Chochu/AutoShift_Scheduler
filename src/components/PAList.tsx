@@ -20,9 +20,11 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
     const paShifts = shifts.filter(shift => shift.paId === pa.id);
     const overnightShifts = paShifts.filter(shift => shift.type === '7PM').length;
     const weekendShifts = paShifts.filter(shift => {
-      const date = new Date(shift.date);
-      const day = date.getDay();
-      return day === 0 || day === 6; // Sunday or Saturday
+      // Parse date more reliably by splitting the string
+      const [year, month, day] = shift.date.split('-').map(Number);
+      const date = new Date(year, month - 1, day); // month is 0-indexed
+      const dayOfWeek = date.getDay();
+      return dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
     }).length;
 
     // Rule 5: Check if PA has more than 6 shifts in any paycheck period
@@ -57,11 +59,15 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
     // Rule 4: Check weekend shifts per month
     const monthWeekendCounts = new Map<string, number>();
     paShifts.filter(shift => {
-      const date = new Date(shift.date);
-      const day = date.getDay();
-      return day === 0 || day === 6; // Sunday or Saturday
+      // Parse date more reliably by splitting the string (same method as line 22-28)
+      const [year, month, day] = shift.date.split('-').map(Number);
+      const date = new Date(year, month - 1, day); // month is 0-indexed
+      const dayOfWeek = date.getDay();
+      return dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
     }).forEach(shift => {
-      const date = new Date(shift.date);
+      // Parse date more reliably by splitting the string
+      const [year, month, day] = shift.date.split('-').map(Number);
+      const date = new Date(year, month - 1, day); // month is 0-indexed
       const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
       monthWeekendCounts.set(monthKey, (monthWeekendCounts.get(monthKey) || 0) + 1);
     });

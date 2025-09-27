@@ -139,13 +139,15 @@ Excel files with the following sheets:
 
 **Sheet 3 [ListOfPA]**: 
     Structure format: Name(ID) | Number of Shift
-    Notes: Contains the list of PA that are available to work
-    We will start assigning PA from top to bottom.
+    Notes: Contains the list of PA that are available to work.
+    Number of Shift: Maximum number of shifts this PA is allowed to work in a 2-pay period (4 weeks).
+    The system will not assign more shifts than this limit to ensure fair distribution and compliance.
 
 **Sheet 4 [ListOfPerDiem]**:
     Structure format: Name(ID) | Number of Shift | Dates Available to Work Start | Dates Available to Work End
-    Notes: Per Diem are slot filler(they are contract worker), if there's empty slot at the end of assign the list of PA. 
-    We will assign Per Diem to fill in the slot if it's fit the Dates Available to work. 
+    Notes: Per Diem are slot fillers (contract workers). If there are empty slots after assigning regular PAs, 
+    Per Diem staff will be assigned to fill slots within their available date range.
+    Number of Shift: Maximum number of shifts this Per Diem is allowed to work in a 2-pay period (4 weeks).
 
 ## Calendar System
 

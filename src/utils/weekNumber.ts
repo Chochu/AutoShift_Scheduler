@@ -1,11 +1,20 @@
 export const getWeekNumber = (date: string): number => {
-  const d = new Date(date);
+  // Parse date without timezone issues
+  const [year, month, day] = date.split('-').map(Number);
+  const d = new Date(year, month - 1, day); // month is 0-indexed
+  
   const dayOfMonth = d.getDate();
+  const dayOfWeek = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
   
-  // Calculate which week of the month (1-4)
-  const weekNumber = Math.ceil(dayOfMonth / 7);
+  // Find the Monday of the current week
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const mondayOfWeek = dayOfMonth - daysToMonday;
   
-  return weekNumber;
+  // Calculate which week of the month based on the Monday
+  const weekNumber = Math.ceil(mondayOfWeek / 7);
+  
+  // Ensure it's between 1-4
+  return Math.max(1, Math.min(4, weekNumber));
 };
 
 export const getPaycheckPeriod = (date: string): number => {
