@@ -5,15 +5,14 @@ import { useState } from "react";
 import { User, Calendar, Moon, Clock } from "lucide-react";
 import { PA } from "@/model/PA";
 import { Shift } from "@/model/Shift";
-import { getWeekNumber, getPaycheckPeriod, isSamePaycheckPeriod } from "@/utils/weekNumber";
+import { getPaycheckPeriod } from "@/utils/weekNumber";
 
 interface PAListProps {
   pas: PA[];
   shifts: Shift[];
-  onUpdatePA: (pas: PA[]) => void;
 }
 
-export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
+export function PAList({ pas, shifts }: PAListProps) {
   const [filter, setFilter] = useState<'all' | 'available' | 'overworked'>('all');
 
   const getPAStats = (pa: PA) => {

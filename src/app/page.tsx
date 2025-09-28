@@ -14,7 +14,6 @@ import { PA } from "@/model/PA";
 import { DayTemplate } from "@/model/DayTemplate";
 import { getShiftColor } from "@/utils/shiftColors";
 import { SchedulingService } from "@/services/schedulingService";
-import { getWeekNumber } from "@/utils/weekNumber";
 
 interface UploadedData {
   requestedWorkDays?: Array<{
@@ -503,7 +502,6 @@ export default function Home() {
           <PAList 
             pas={pas}
             shifts={shifts}
-            onUpdatePA={setPAs}
           />
         )}
 

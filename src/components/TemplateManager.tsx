@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Edit, Trash2, Calendar, GripVertical } from "lucide-react";
+import { Plus, Edit, Trash2, Calendar, GripVertical, X, Save } from "lucide-react";
 import { DayTemplate } from "@/model/DayTemplate";
 
 interface TemplateManagerProps {
@@ -20,9 +20,92 @@ export function TemplateManager({
   const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<DayTemplate | null>(null);
   const [draggedTemplate, setDraggedTemplate] = useState<DayTemplate | null>(null);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    name: '',
+    shifts: [
+      { type: '7AM' as const, count: 0 },
+      { type: '7PM' as const, count: 0 },
+      { type: '8AM' as const, count: 0 },
+      { type: '10AM' as const, count: 0 }
+    ]
+  });
 
   const deleteTemplate = (templateId: string) => {
     onUpdateTemplates(templates.filter(t => t.id !== templateId));
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      shifts: [
+        { type: '7AM' as const, count: 0 },
+        { type: '7PM' as const, count: 0 },
+        { type: '8AM' as const, count: 0 },
+        { type: '10AM' as const, count: 0 }
+      ]
+    });
+  };
+
+  const openCreateForm = () => {
+    resetForm();
+    setIsCreatingTemplate(true);
+  };
+
+  const openEditForm = (template: DayTemplate) => {
+    setFormData({
+      name: template.name,
+      shifts: template.shifts.map(shift => ({ ...shift }))
+    });
+    setEditingTemplate(template);
+  };
+
+  const closeForm = () => {
+    setIsCreatingTemplate(false);
+    setEditingTemplate(null);
+    resetForm();
+  };
+
+  const handleShiftCountChange = (type: string, count: number) => {
+    setFormData(prev => ({
+      ...prev,
+      shifts: prev.shifts.map(shift => 
+        shift.type === type ? { ...shift, count } : shift
+      )
+    }));
+  };
+
+  const handleSaveTemplate = () => {
+    if (!formData.name.trim()) {
+      alert('Please enter a template name');
+      return;
+    }
+
+    const shiftsWithCount = formData.shifts.filter(shift => shift.count > 0);
+    if (shiftsWithCount.length === 0) {
+      alert('Please add at least one shift');
+      return;
+    }
+
+    const newTemplate: DayTemplate = {
+      id: editingTemplate?.id || `template-${Date.now()}`,
+      name: formData.name.trim(),
+      shifts: shiftsWithCount
+    };
+
+    if (editingTemplate) {
+      // Update existing template
+      const updatedTemplates = templates.map(t => 
+        t.id === editingTemplate.id ? newTemplate : t
+      );
+      onUpdateTemplates(updatedTemplates);
+    } else {
+      // Create new template
+      onUpdateTemplates([...templates, newTemplate]);
+    }
+
+    closeForm();
   };
 
   const getShiftColor = (type: string) => {
@@ -59,7 +142,7 @@ export function TemplateManager({
             </p>
           </div>
           <button
-            onClick={() => setIsCreatingTemplate(true)}
+            onClick={openCreateForm}
             className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
           >
             <Plus className="h-4 w-4" />
@@ -89,7 +172,7 @@ export function TemplateManager({
               </div>
               <div className="flex space-x-2">
                 <button
-                  onClick={() => setEditingTemplate(template)}
+                  onClick={() => openEditForm(template)}
                   className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
                 >
                   <Edit className="h-4 w-4" />
@@ -154,11 +237,104 @@ export function TemplateManager({
             Create your first day template to get started
           </p>
           <button
-            onClick={() => setIsCreatingTemplate(true)}
+            onClick={openCreateForm}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
           >
             Create Template
           </button>
+        </div>
+      )}
+
+      {/* Create/Edit Template Modal */}
+      {(isCreatingTemplate || editingTemplate) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {editingTemplate ? 'Edit Template' : 'Create New Template'}
+              </h3>
+              <button
+                onClick={closeForm}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 space-y-6">
+              {/* Template Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Template Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter template name..."
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              {/* Shift Counts */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  Shift Counts
+                </label>
+                <div className="space-y-3">
+                  {formData.shifts.map((shift) => (
+                    <div key={shift.type} className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-4 h-4 rounded"
+                          style={{ backgroundColor: getShiftColor(shift.type) }}
+                        ></div>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {shift.type}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleShiftCountChange(shift.type, Math.max(0, shift.count - 1))}
+                          className="w-8 h-8 flex items-center justify-center border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          -
+                        </button>
+                        <span className="w-8 text-center text-sm font-medium text-gray-900 dark:text-white">
+                          {shift.count}
+                        </span>
+                        <button
+                          onClick={() => handleShiftCountChange(shift.type, shift.count + 1)}
+                          className="w-8 h-8 flex items-center justify-center border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={closeForm}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveTemplate}
+                  className="flex-1 flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>{editingTemplate ? 'Update' : 'Create'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, User, Users, Moon, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, User, Moon, Clock } from "lucide-react";
 import { Shift } from "@/model/Shift";
 import { getShiftColor } from "@/utils/shiftColors";
 
@@ -196,7 +196,7 @@ export function Calendar({ selectedDate, selectedDates, onDateSelect, shifts, on
 
               {/* Shifts */}
               <div className="space-y-1 overflow-hidden max-h-[calc(100%-40px)]">
-                {dateShifts.map((shift, index) => {
+                {dateShifts.map((shift) => {
                   const colorConfig = getShiftColor(shift.type);
                   return (
                     <div

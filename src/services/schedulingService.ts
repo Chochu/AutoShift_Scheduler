@@ -1,7 +1,7 @@
 import { PA } from "@/model/PA";
 import { PerDiem } from "@/model/PerDiem";
 import { Shift } from "@/model/Shift";
-import { getWeekNumber, getPaycheckPeriod, isSameWeek, isSamePaycheckPeriod } from "@/utils/weekNumber";
+import { getWeekNumber, isSameWeek, isSamePaycheckPeriod } from "@/utils/weekNumber";
 
 interface PAEntry {
   'Name(ID)': string;
@@ -184,7 +184,6 @@ export class SchedulingService {
     }
 
     // Rule 5: PA work total of 6 shifts max every paycheck (Week 1+2 | Week 3+4)
-    const currentPaycheckPeriod = getPaycheckPeriod(shift.date);
     const paShiftsThisPaycheck = existingShifts.filter(s => 
       s.paId === pa.id && 
       isSamePaycheckPeriod(s.date, shift.date)
@@ -196,7 +195,6 @@ export class SchedulingService {
 
     // Rule 1: PA overnight shift rules (2 overnight shifts per paycheck)
     if (this.isOvernight(shift.type)) {
-      const currentPaycheckPeriod = getPaycheckPeriod(shift.date);
       const paOvernightShiftsThisPaycheck = existingShifts.filter(s => 
         s.paId === pa.id && 
         s.type === '7PM' && 
@@ -299,7 +297,7 @@ export class SchedulingService {
       });
       
       // If any week has 3 shifts, PA is not available
-      for (const [weekKey, count] of paShiftsByWeek) {
+      for (const [, count] of paShiftsByWeek) {
         if (count >= 3) {
           return false;
         }
