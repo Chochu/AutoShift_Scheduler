@@ -28,9 +28,11 @@ interface UploadedData {
   }>;
   paList?: Array<{
     'Name(ID)': string;
+    'Number of Shift': number;
   }>;
   perDiemList?: Array<{
     'Name(ID)': string;
+    'Number of Shift': number;
     'Dates Available to Work Start': string;
     'Dates Available to Work End': string;
   }>;
@@ -167,7 +169,8 @@ export default function Home() {
         uploadedData.paList = paData.map((item: unknown) => {
           const typedItem = item as Record<string, unknown>;
           return {
-            'Name(ID)': String(typedItem['Name(ID)'] || '')
+            'Name(ID)': String(typedItem['Name(ID)'] || ''),
+            'Number of Shift': Number(typedItem['Number of Shift'] || 0)
           };
         });
         console.log('PA List:', paData);
@@ -182,6 +185,7 @@ export default function Home() {
           const typedItem = item as Record<string, unknown>;
           return {
             'Name(ID)': String(typedItem['Name(ID)'] || ''),
+            'Number of Shift': Number(typedItem['Number of Shift'] || 0),
             'Dates Available to Work Start': typeof typedItem['Dates Available to Work Start'] === 'number' ? 
               XLSX.SSF.format('yyyy-mm-dd', typedItem['Dates Available to Work Start']) : 
               String(typedItem['Dates Available to Work Start'] || ''),

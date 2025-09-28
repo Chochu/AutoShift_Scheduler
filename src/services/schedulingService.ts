@@ -573,7 +573,7 @@ export class SchedulingService {
     // LOOP 3: Schedule remaining weekday shifts
     console.log('=== LOOP 3: SCHEDULING REMAINING WEEKDAY SHIFTS ===');
     let unassignedWeekdayShifts = 0;
-    let totalWeekdayShifts = weekdayShifts.length;
+    const totalWeekdayShifts = weekdayShifts.length;
     
     for (const shift of weekdayShifts) {
       // Check if any PAs are still available before processing this shift
