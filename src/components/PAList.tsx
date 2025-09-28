@@ -36,25 +36,15 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
     
     const isOverworked = Array.from(paycheckPeriods.values()).some(count => count > 6);
 
-    // Rule 1: Check overnight shifts per week (should be 2 every other week)
-    const weekOvernightCounts = new Map<number, number>();
+    // Rule 1: Check overnight shifts per paycheck (should be 2 per paycheck)
+    const paycheckOvernightCounts = new Map<number, number>();
     paShifts.filter(shift => shift.type === '7PM').forEach(shift => {
-      const week = getWeekNumber(shift.date);
-      weekOvernightCounts.set(week, (weekOvernightCounts.get(week) || 0) + 1);
+      const period = getPaycheckPeriod(shift.date);
+      paycheckOvernightCounts.set(period, (paycheckOvernightCounts.get(period) || 0) + 1);
     });
     
-    // Check if any week has more than 2 overnight shifts
-    const hasTooManyOvernightPerWeek = Array.from(weekOvernightCounts.values()).some(count => count > 2);
-    
-    // Check if PA has consecutive weeks with overnight shifts (should alternate)
-    const weeksWithOvernight = Array.from(weekOvernightCounts.keys()).sort();
-    let hasConsecutiveOvernightWeeks = false;
-    for (let i = 0; i < weeksWithOvernight.length - 1; i++) {
-      if (weeksWithOvernight[i + 1] - weeksWithOvernight[i] === 1) {
-        hasConsecutiveOvernightWeeks = true;
-        break;
-      }
-    }
+    // Check if any paycheck period has more than 2 overnight shifts
+    const hasTooManyOvernightPerPaycheck = Array.from(paycheckOvernightCounts.values()).some(count => count > 2);
 
     // Rule 4: Check weekend shifts per month
     const monthWeekendCounts = new Map<string, number>();
@@ -80,13 +70,17 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
       overnightShifts,
       weekendShifts,
       isOverworked,
-      hasTooManyOvernightPerWeek,
-      hasConsecutiveOvernightWeeks,
+      hasTooManyOvernightPerPaycheck,
       hasTooManyWeekendPerMonth,
       paycheckPeriods: Array.from(paycheckPeriods.entries()).map(([period, count]) => ({
         period,
         count,
         isOverLimit: count > 6
+      })),
+      paycheckOvernightPeriods: Array.from(paycheckOvernightCounts.entries()).map(([period, count]) => ({
+        period,
+        count,
+        isOverLimit: count > 2
       }))
     };
   };
@@ -130,7 +124,7 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
               <div
                 key={pa.id}
                 className={`p-4 rounded-lg border-2 transition-colors ${
-                  stats.isOverworked || stats.hasTooManyOvernightPerWeek || stats.hasConsecutiveOvernightWeeks || stats.hasTooManyWeekendPerMonth
+                  stats.isOverworked || stats.hasTooManyOvernightPerPaycheck || stats.hasTooManyWeekendPerMonth
                     ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'
                     : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
                 }`}
@@ -148,7 +142,7 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
                     </div>
                   </div>
                   
-                  {(stats.isOverworked || stats.hasTooManyOvernightPerWeek || stats.hasConsecutiveOvernightWeeks || stats.hasTooManyWeekendPerMonth) && (
+                  {(stats.isOverworked || stats.hasTooManyOvernightPerPaycheck || stats.hasTooManyWeekendPerMonth) && (
                     <span className="px-2 py-1 bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 text-xs rounded-full">
                       Rule Violation
                     </span>
@@ -172,7 +166,7 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
                     <Moon className="h-4 w-4 text-gray-400" />
                     <div>
                       <div className={`font-medium ${
-                        stats.hasTooManyOvernightPerWeek || stats.hasConsecutiveOvernightWeeks ? 'text-red-600' : 'text-gray-900 dark:text-white'
+                        stats.hasTooManyOvernightPerPaycheck ? 'text-red-600' : 'text-gray-900 dark:text-white'
                       }`}>
                         {stats.overnightShifts}
                       </div>
@@ -210,7 +204,22 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
                             : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
                         }`}
                       >
-                        Period {period}: {count}/6
+                        Period {period}: {count}/6 shifts
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-2 mt-2">Overnight Shifts per Paycheck:</div>
+                  <div className="flex flex-wrap gap-2">
+                    {stats.paycheckOvernightPeriods.map(({ period, count, isOverLimit }) => (
+                      <span
+                        key={period}
+                        className={`px-2 py-1 text-xs rounded-full ${
+                          isOverLimit
+                            ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                            : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                        }`}
+                      >
+                        Period {period}: {count}/2 overnight
                       </span>
                     ))}
                   </div>
@@ -224,14 +233,9 @@ export function PAList({ pas, shifts, onUpdatePA }: PAListProps) {
                         Over 6 Shifts/2 Weeks
                       </span>
                     )}
-                    {stats.hasTooManyOvernightPerWeek && (
+                    {stats.hasTooManyOvernightPerPaycheck && (
                       <span className="px-2 py-1 bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 text-xs rounded-full">
-                        Too Many Overnight/Week
-                      </span>
-                    )}
-                    {stats.hasConsecutiveOvernightWeeks && (
-                      <span className="px-2 py-1 bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 text-xs rounded-full">
-                        Consecutive Overnight Weeks
+                        Too Many Overnight/Paycheck
                       </span>
                     )}
                     {stats.hasTooManyWeekendPerMonth && (
